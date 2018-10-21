@@ -1,0 +1,4 @@
+*.asv
+analysis/fitted\ models/
+.Ds_Store
+
