@@ -1,7 +1,5 @@
 function Y = predict(m, n, X, Xs,Xv, piCell, xyCell, XrCell, expected)
 
-calcDirect = false;
-
 res = cell(1, n);
 if n==m.postSamN
 	postSamInd = 1:n;
@@ -62,6 +60,7 @@ LiFgA = cell(1, m.nr);
 W21iDW12gA = cell(1, m.nr);
 WssgA = cell(1, m.nr);
 iWssgA = cell(1, m.nr);
+WnoiWoogA = cell(1, m.nr);
 LWNgA = cell(1, m.nr);
 WnsgA = cell(1, m.nr);
 WnsiWssgA = cell(1, m.nr);
@@ -72,12 +71,13 @@ alphaAllPost = cat(1,m.postSamVec(postSamInd).alpha);
 for r = 1:m.nr
 	newPiInd = ~ismember(pi(:,r), m.pi(:,r));
 	pi1 = pi(newPiInd, r);
-	newPiN = length( unique(pi1) );
+	newPiN = length(unique(pi1));
 	np = m.np(r);
 	if m.spatial(r) && newPiN > 0
 		xy1 = xy{r};
 		alphapw = m.alphapw{r};
 		alphagN = size(alphapw, 1);
+		alphaIndUn = sort(unique(cell2mat(alphaAllPost(:,r))));
 		switch m.spatialMethod{r}
 			case 'GP'
 				daa = zeros(m.np(r)+newPiN);
@@ -89,7 +89,27 @@ for r = 1:m.nr
 				daa = sqrt(daa);
 				diaa{r} = daa;
 				
-				LWNg = cell(1, alphaN);
+				WnoiWoog = cell(1, alphagN);
+				LWNg = cell(1, alphagN);
+				don = daa(1:m.np(r), m.np(r)+(1:newPiN));
+				dnn = daa(m.np(r)+(1:newPiN), m.np(r)+(1:newPiN));
+				for i = 1:length(alphaIndUn)
+					ag = alphaIndUn(i);
+					alpha = alphapw(ag,1);
+					if alpha > 0
+						Won = exp(-don/alpha);
+						Wnn = exp(-dnn/alpha);
+					else
+						Won = zeros(size(don));
+						Wnn = eye(size(dnn));
+					end
+					iWooR = m.iWgR{r}(:,:,ag);
+					WnoiWooR = Won' * iWooR';
+					WN = Wnn - WnoiWooR * WnoiWooR';
+					WnoiWoog{ag} = WnoiWooR * iWooR;
+					LWNg{ag} = chol(WN,'lower');
+				end
+				WnoiWoogA{r} = WnoiWoog;
 				LWNgA{r} = LWNg;
 			case 'PGP'
 				xys = m.xyKnot{r};
@@ -118,20 +138,22 @@ for r = 1:m.nr
 				WnsgA{r} = cell(1,size(m.alphapw{r},1));
 				WnsiWssgA{r} = cell(1,size(m.alphapw{r},1));
 				dDngA{r} = cell(1,size(m.alphapw{r},1));
-				alphaIndUn = sort(unique(cell2mat(alphaAllPost(:,r))));
 				for i = 1:length(alphaIndUn)
 					ag = alphaIndUn(i);
 					alpha = m.alphapw{r}(ag,1);
 					if alpha > 0
+						WnsgA{r}{ag} = exp(-dns/alpha);
 						WssgA{r}{ag} = exp(-dss/alpha);
 						iWssgA{r}{ag} = invChol_mex(WssgA{r}{ag});
 						Wns = exp(-dns/alpha);
-                        WnsiWss = WnsgA{r}{ag}*iWssgA{r}{ag};
+						WnsiWss = WnsgA{r}{ag}*iWssgA{r}{ag};
 % 						WnsiWssgA{r}{ag} = WnsgA{r}{ag}*iWssgA{r}{ag};
 						dDngA{r}{ag} = ones(size(Wns,1),1) - sum(WnsiWss.*Wns,2);
-                    else
+					else
+						WnsgA{r}{ag} = zeros(size(dns));
 						WssgA{r}{ag} = eye(size(dss));
 						iWssgA{r}{ag} = eye(size(dss));
+						dDngA{r}{ag} = ones(size(dns,1),1);
 					end
 				end
 			case 'NNGP'
@@ -152,7 +174,6 @@ for r = 1:m.nr
 				
 				BgA{r} = cell(1,alphagN);
 				FgA{r} = cell(1,alphagN);
-				alphaIndUn = sort(unique(cell2mat(alphaAllPost(:,r))));
 				for i = 1:length(alphaIndUn)
 					ag = alphaIndUn(i);
 					alpha = m.alphapw{r}(ag,1);
@@ -179,155 +200,147 @@ for r = 1:m.nr
 				end
 		end
 	end
-	
-	for rN = 1:n
-		if mod(rN, 100) == 0
-			fprintf('Calculating prediction %d\n', rN);
+end
+
+for rN = 1:n
+	if mod(rN, 100) == 0
+		fprintf('Calculating prediction %d\n', rN);
+	end
+	p = m.postSamVec(postSamInd(rN));
+	if m.speciesX
+		ny = size(X{1}, 1);
+		Ez = zeros(ny, m.ns);
+		for j = 1:m.ns
+			Ez(:,j) = X{j}*p.beta(:,j);
 		end
-		p = m.postSamVec(postSamInd(rN));
-		if m.speciesX
-			ny = size(X{1}, 1);
-			Ez = zeros(ny, m.ns);
-			for r = 1:m.ns
-				Ez(:,r) = X{r}*p.beta(:,r);
+	else
+		ny = size(X, 1);
+		Ez = X*p.beta;
+	end
+	
+	for r = 1:m.nr
+		etaM = p.eta{r};
+		lambda1 = p.lambda{r};
+		newPiInd = ~ismember(pi(:,r), m.pi(:,r));
+		pi1 = pi(newPiInd, r);
+		newPiN = length( unique(pi1) );
+		if m.spatial(r) && newPiN > 0
+			alphaInd = p.alpha{r};
+			alphapw = m.alphapw{r};
+			etaN = nan(newPiN, p.nf(r));
+			for j = 1:p.nf(r)
+				ag = alphaInd(j);
+				alpha = alphapw(ag, 1);
+				if alpha > 0
+					switch m.spatialMethod{r}
+						case 'GP'
+							WnoiWoo = WnoiWoogA{r}{ag};
+							LWN = LWNgA{r}{ag};
+							muN = WnoiWoo * etaM(:,j);
+							etaN(:,j) = muN + LWN*randn(newPiN,1);
+						case 'PGP'
+							% dss = diss{r};
+							Wss = WssgA{r}{ag};
+							Wns = WnsgA{r}{ag};
+							dDn = dDngA{r}{ag};
+							iF = m.iFg{r}(:,:,ag);
+							idDW12 = m.idDW12g{r}(:,:,ag);
+							LiF = LiFgA{r}(:,:,ag);
+							
+							muS1 = iF*idDW12'*etaM(:,j);
+							epsS1 = LiF*randn(size(Wss,1),1);
+							muN = Wns*(muS1+epsS1);
+							etaN(:,j) = muN + sqrt(dDn).*randn(newPiN,1);
+							
+							%                                 iWss = iWssgA{r}{ag};
+							%                                 F = m.Fg{r}(:,:,ag);
+							%                                 tmp1 = idDW12'*etaM(:,j);
+							%                                 tmp2 = F-Wss;
+							%                                 muS = tmp1 - (tmp2)*(iF*tmp1);
+							%                                 SigSS = Wss - tmp2 + tmp2*iF*tmp2;
+							%                                 LSigSS = chol(SigSS);
+							%                                 etaN(:,j) = Wns*(iWss*(muS+LSigSS*randn(size(Wss,1),1))) + sqrt(dDn).*randn(newPiN,1);
+						case 'NNGP'
+							muN = BgA{r}{ag}*etaM(:,j);
+							etaN(:,j) = muN + sqrt(FgA{r}{ag})'.*randn(newPiN,1);
+					end
+				else
+					etaN(:,j) = normrnd(0,1,[newPiN,1]);
+				end
 			end
 		else
-			ny = size(X, 1);
-			Ez = X*p.beta;
+			etaN = normrnd(0,1,[newPiN,p.nf(r)]);
 		end
-		
-		for r = 1:m.nr
-			etaM = p.eta{r};
-			lambda1 = p.lambda{r};
-			newPiInd = ~ismember(pi(:,r), m.pi(:,r));
-			pi1 = pi(newPiInd, r);
-			newPiN = length( unique(pi1) );
-			if m.spatial(r) && newPiN > 0
-				alphaInd = p.alpha{r};
-				alphapw = m.alphapw{r};
-				etaN = nan(newPiN, p.nf(r));
-				for j = 1:p.nf(r)
-					ag = alphaInd(j);
-					alpha = alphapw(ag, 1);
-					if alpha > 0
-						switch m.spatialMethod{r}
-							case 'GP'
-								daa = diaa{r};
-								don = daa(1:m.np(r), m.np(r)+(1:newPiN));
-								dnn = daa(m.np(r)+(1:newPiN), m.np(r)+(1:newPiN));
-								Won = exp(-don/alpha);
-								Wnn = exp(-dnn/alpha);
-								iWoo = m.iWg{r}(:,:,ag);
-								muN = Won' * iWoo * etaM(:,j);
-								WN = Wnn - Won' * iWoo * Won;
-								WN = (WN+WN') / 2;
-								etaN(:,j) = mvnrnd(muN, WN);
-								
-								LWN = LWNgA{r}{ag};
-								etaN(:,j) = muN + LWN*randn(newPiN,1);
-							case 'PGP'
-								% dss = diss{r};
-								Wss = WssgA{r}{ag};
-								Wns = WnsgA{r}{ag};
-								dDn = dDngA{r}{ag};
-								iF = m.iFg{r}(:,:,ag);
-								idDW12 = m.idDW12g{r}(:,:,ag);
-								LiF = LiFgA{r}(:,:,ag);
-								
-								muS1 = iF*idDW12'*etaM(:,j);
-								epsS1 = LiF*randn(size(Wss,1),1);
-								muN = Wns*(muS1+epsS1);
-								etaN(:,j) = muN + 0*sqrt(dDn).*randn(newPiN,1);
-                                
-%                                 iWss = iWssgA{r}{ag};
-%                                 F = m.Fg{r}(:,:,ag);
-%                                 tmp1 = idDW12'*etaM(:,j);
-%                                 tmp2 = F-Wss;
-%                                 muS = tmp1 - (tmp2)*(iF*tmp1);
-%                                 SigSS = Wss - tmp2 + tmp2*iF*tmp2;
-%                                 LSigSS = chol(SigSS);
-%                                 etaN(:,j) = Wns*(iWss*(muS+LSigSS*randn(size(Wss,1),1))) + sqrt(dDn).*randn(newPiN,1);
-							case 'NNGP'
-								muN = BgA{r}{ag}*etaM(:,j);
-								etaN(:,j) = muN + 0*sqrt(FgA{r}{ag})'.*randn(newPiN,1);
-						end
-					else
-						etaN(:,j) = normrnd(0,1,[newPiN,1]);
-					end
-				end
-			else
-				etaN = normrnd(0,1,[newPiN,p.nf(r)]);
+		eta = [etaM; etaN];
+		if m.factorCov(r)
+			for k = 1:m.ncr(r)
+				Xreta = repmat(Xr{r}(:,k), 1, p.nf(r)).*eta;
+				Ez = Ez + Xreta(pi(:,r),:)*lambda1(:,:,k);
 			end
-			eta = [etaM; etaN];
-			if m.factorCov(r)
-				for k = 1:m.ncr(r)
-					Xreta = repmat(Xr{r}(:,k), 1, p.nf(r)).*eta;
-					Ez = Ez + Xreta(pi(:,r),:)*lambda1(:,:,k);
-				end
-			else
-				Ez = Ez + eta(pi(:,r),:)*lambda1;
-			end
+		else
+			Ez = Ez + eta(pi(:,r),:)*lambda1;
 		end
-		
-		if m.includeXs
-			Xel = Xs*p.etas*p.lambdas;
-			Ez = Ez+Xel;
-		end
-		if m.includeXv
-			Xel = Xv*(p.qv.*p.betav);
-			Ez = Ez+Xel;
-		end
-		
-		z = Ez;
-		if expected == false
-			
-			eps = normrnd(zeros(ny, m.ns), 1);
-			eps = eps .* repmat(diag(p.sigma)', ny, 1);
-			%eps = zeros(ny, m.ns);
-			%for i = 1:ny
-			%   eps(i,:) = normrnd(zeros(1,m.ns), diag(p.sigma)' );
-			%end
-			mult=ones(ny, m.ns);
-			for j = 1:m.ns
-				if m.dist(j,3) == 1
-					mult(:,j) = max(Ez(:,j),1).^m.dist(j,4);
-				end
-				if m.dist(j,3) == 2
-					mult(:,j) = exp(Ez(:,j)).^m.dist(j,4);
-				end
-			end
-			z = z + mult.*eps;
-		end
-		Y = z;
-		
-		for j = 1:m.ns
-			if(m.dist(j,1) == 2)
-				if expected
-					Y(:,j) = normcdf(z(:,j));
-				else
-					Y(:,j) = z(:,j)>0;
-				end
-			end
-			if(m.dist(j,1) == 3)
-				if expected
-					Y(:,j) = exp(z(:,j));
-				else
-					Y(:,j) = poissrnd(exp(z(:,j)));
-				end
-			end
-			if(m.dist(j,1) == 4)
-				if expected
-					Y(:,j) = max(0,z(:,j));
-				else
-					Y(:,j) = max(0,z(:,j));
-				end
-				Y(:,j) = poissrnd(max(0,z(:,j)));
-			end
-		end
-		res{rN} = Y;
 	end
-	Y = res;
 	
+	if m.includeXs
+		Xel = Xs*p.etas*p.lambdas;
+		Ez = Ez+Xel;
+	end
+	if m.includeXv
+		Xel = Xv*(p.qv.*p.betav);
+		Ez = Ez+Xel;
+	end
+	
+	z = Ez;
+	if expected == false
+		
+		eps = normrnd(zeros(ny, m.ns), 1);
+		eps = eps .* repmat(diag(p.sigma)', ny, 1);
+		%eps = zeros(ny, m.ns);
+		%for i = 1:ny
+		%   eps(i,:) = normrnd(zeros(1,m.ns), diag(p.sigma)' );
+		%end
+		mult=ones(ny, m.ns);
+		for j = 1:m.ns
+			if m.dist(j,3) == 1
+				mult(:,j) = max(Ez(:,j),1).^m.dist(j,4);
+			end
+			if m.dist(j,3) == 2
+				mult(:,j) = exp(Ez(:,j)).^m.dist(j,4);
+			end
+		end
+		z = z + mult.*eps;
+	end
+	Y = z;
+	
+	for j = 1:m.ns
+		if(m.dist(j,1) == 2)
+			if expected
+				Y(:,j) = normcdf(z(:,j));
+			else
+				Y(:,j) = z(:,j)>0;
+			end
+		end
+		if(m.dist(j,1) == 3)
+			if expected
+				Y(:,j) = exp(z(:,j));
+			else
+				Y(:,j) = poissrnd(exp(z(:,j)));
+			end
+		end
+		if(m.dist(j,1) == 4)
+			if expected
+				Y(:,j) = max(0,z(:,j));
+			else
+				Y(:,j) = max(0,z(:,j));
+			end
+			Y(:,j) = poissrnd(max(0,z(:,j)));
+		end
+	end
+	res{rN} = Y;
+end
+Y = res;
+
 end
 
 

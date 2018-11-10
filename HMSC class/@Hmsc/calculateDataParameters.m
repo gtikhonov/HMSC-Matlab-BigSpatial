@@ -1,10 +1,10 @@
-function [iQg,detQg,iWgA,LiWgA,detWgA,idDgA,idDW12gA,FgA,iFgA,detDgA] = calculateDataParameters(m)
+function [iQg,detQg,iWgA,iWgRA,detWgA,idDgA,idDW12gA,FgA,iFgA,detDgA] = calculateDataParameters(m)
 % function [iQg,detQg,iWgA,iWgAR,detWgA,CgA,taugA,iICCgA] = calculateDataParameters(m)
 
 iQg = nan(m.ns,m.ns,size(m.rhopw,1));
 detQg = nan(size(m.rhopw,1),1);
 iWgA = cell(1,m.nr);
-LiWgA = cell(1,m.nr); %cholesky component of iW
+iWgRA = cell(1,m.nr); %cholesky component of iW
 detWgA = cell(1,m.nr);
 idDgA = cell(1,m.nr);
 idDW12gA = cell(1,m.nr);
@@ -59,7 +59,6 @@ for r=1:m.nr
 				iWg = nan(np,np,alphagN);
 				iWgR = nan(np,np,alphagN);
 				detWg = nan(alphagN,1);
-				
 			case 'PGP'
 				dim = m.spatDim(r);
 				if isempty(m.xyKnot{r})
@@ -71,9 +70,6 @@ for r=1:m.nr
 					xyMin = min(m.xy{r});
 					intLim = max(m.xy{r})-xyMin;
 					if dim==1
-						hStep = ((1:R).^0)';
-						R = round(knotN^(1/dim));
-						des = fullfact(repmat(R,1,dim));
 						hStep = ((1:R).^0)';
 						hStep = repmat(hStep./sum(hStep),1,dim) .* repmat(intLim,R,1) ;
 						hG0 = (cumsum(hStep)-hStep/2);
@@ -109,13 +105,7 @@ for r=1:m.nr
 				end
 				di = sqrt(di);
 				di12 = di;
-				
-				%          figure;
-				%          scatter(xy(:,1), xy(:,2), 30, 'red', 'filled');
-				%          hold on;
-				%          scatter(xy2(:,1), xy2(:,2), 10, 'black', 'filled');
-				%          drawnow;
-				
+
 				di = zeros(nK); % calculate the spatial distances
 				for j = 1:dim
 					xx = repmat(xyK(:,j),1,nK);
@@ -229,7 +219,7 @@ for r=1:m.nr
 		end
 		
 		iWgA{r} = iWg;
-		LiWgA{r} = iWgR;
+		iWgRA{r} = iWgR;
 		detWgA{r} = detWg;
 		idDgA{r} = idDg;
 		idDW12gA{r} = idDW12g;

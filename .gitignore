@@ -1,4 +1,6 @@
 *.asv
-analysis/fitted\ models/
 .Ds_Store
+help/
+case\ studies/
 
+!help.tex
